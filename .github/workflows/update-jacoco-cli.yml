@@ -1,0 +1,73 @@
+name: Update jacoco-cli formula
+
+on:
+  repository_dispatch:
+    types: [update-formula]
+
+jobs:
+  update:
+    name: Update formula
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download release assets and compute checksums
+        id: checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.client_payload.version }}
+        run: |
+          gh release download "$VERSION" --repo bgalek/jacoco-cli --pattern 'jacoco-cli-*'
+          echo "sha_macos_aarch64=$(sha256sum jacoco-cli-macos-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_x86_64=$(sha256sum jacoco-cli-linux-x86_64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_aarch64=$(sha256sum jacoco-cli-linux-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Generate formula
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          SHA_MACOS_AARCH64: ${{ steps.checksums.outputs.sha_macos_aarch64 }}
+          SHA_LINUX_X86_64: ${{ steps.checksums.outputs.sha_linux_x86_64 }}
+          SHA_LINUX_AARCH64: ${{ steps.checksums.outputs.sha_linux_aarch64 }}
+        run: |
+          cat > Formula/jacoco-cli.rb << FORMULA
+          class JacocoCli < Formula
+            desc "Native CLI for JaCoCo code coverage tools (no JVM required)"
+            homepage "https://github.com/bgalek/jacoco-cli"
+            license "EPL-2.0"
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/bgalek/jacoco-cli/releases/download/${VERSION}/jacoco-cli-macos-aarch64"
+                sha256 "${SHA_MACOS_AARCH64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/bgalek/jacoco-cli/releases/download/${VERSION}/jacoco-cli-linux-aarch64"
+                sha256 "${SHA_LINUX_AARCH64}"
+              end
+              on_intel do
+                url "https://github.com/bgalek/jacoco-cli/releases/download/${VERSION}/jacoco-cli-linux-x86_64"
+                sha256 "${SHA_LINUX_X86_64}"
+              end
+            end
+
+            def install
+              binary = Dir["jacoco-cli*"].first
+              mv binary, "jacoco-cli"
+              chmod 0755, "jacoco-cli"
+              bin.install "jacoco-cli"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/jacoco-cli version")
+            end
+          end
+          FORMULA
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/jacoco-cli.rb
+          git commit -m "Update jacoco-cli to ${{ github.event.client_payload.version }}"
+          git push
