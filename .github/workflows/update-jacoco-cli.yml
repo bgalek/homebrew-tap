@@ -18,22 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download release assets and compute checksums
-        id: checksums
+      - name: Fetch release metadata
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.event.client_payload.version || github.event.inputs.version }}
         run: |
-          gh release download "$VERSION" --repo bgalek/jacoco-cli --pattern 'jacoco-cli-*'
-          echo "sha_macos_aarch64=$(sha256sum jacoco-cli-macos-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "sha_linux_x86_64=$(sha256sum jacoco-cli-linux-x86_64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "sha_linux_aarch64=$(sha256sum jacoco-cli-linux-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "assets=$(gh release view "$VERSION" --repo bgalek/jacoco-cli --json assets --jq '.assets | map({(.name): .digest | ltrimstr("sha256:")}) | add')" >> "$GITHUB_OUTPUT"
       - name: Generate formula
         env:
           VERSION: ${{ github.event.client_payload.version || github.event.inputs.version }}
-          SHA_MACOS_AARCH64: ${{ steps.checksums.outputs.sha_macos_aarch64 }}
-          SHA_LINUX_X86_64: ${{ steps.checksums.outputs.sha_linux_x86_64 }}
-          SHA_LINUX_AARCH64: ${{ steps.checksums.outputs.sha_linux_aarch64 }}
+          SHA_MACOS_AARCH64: ${{ fromJson(steps.release.outputs.assets)['jacoco-cli-macos-aarch64'] }}
+          SHA_LINUX_X86_64: ${{ fromJson(steps.release.outputs.assets)['jacoco-cli-linux-x86_64'] }}
+          SHA_LINUX_AARCH64: ${{ fromJson(steps.release.outputs.assets)['jacoco-cli-linux-aarch64'] }}
         run: |
           cat > Formula/jacoco-cli.rb << FORMULA
           class JacocoCli < Formula
